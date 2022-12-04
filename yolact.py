@@ -22,7 +22,9 @@ from utils.functions import MovingAverage, make_net
 torch.cuda.current_device()
 
 # As of March 10, 2019, Pytorch DataParallel still doesn't support JIT Script Modules
-use_jit = torch.cuda.device_count() <= 1
+# use_jit = torch.cuda.device_count() <= 1
+use_jit = False
+
 if not use_jit:
     print('Multiple GPUs detected! Turning off JIT.')
 
@@ -245,7 +247,11 @@ class PredictionModule(nn.Module):
 
                                 prior_data += [x, y, w, h]
 
-                self.priors = torch.Tensor(prior_data, device=device).view(-1, 4).detach()
+                # self.priors = torch.Tensor(prior_data, device=device).view(-1, 4).detach()
+                self.priors = torch.Tensor(prior_data).view(-1, 4)
+                self.priors = self.priors.to(device).detach()
+                #======add=======
+
                 self.priors.requires_grad = False
                 self.last_img_size = (cfg._tmp_img_w, cfg._tmp_img_h)
                 self.last_conv_size = (conv_w, conv_h)
@@ -487,6 +493,7 @@ class Yolact(nn.Module):
             if key.startswith('fpn.downsample_layers.'):
                 if cfg.fpn is not None and int(key.split('.')[2]) >= cfg.fpn.num_downsample:
                     del state_dict[key]
+        # self.load_state_dict(state_dict,False)
         self.load_state_dict(state_dict)
 
     def init_weights(self, backbone_path):
@@ -662,6 +669,8 @@ class Yolact(nn.Module):
                     pred_outs['conf'][:, :, 0 ] = 1 - objectness
                 else:
                     pred_outs['conf'] = F.softmax(pred_outs['conf'], -1)
+                    
+
             else:
 
                 if cfg.use_objectness_score:
@@ -673,7 +682,9 @@ class Yolact(nn.Module):
                 else:
                     pred_outs['conf'] = F.softmax(pred_outs['conf'], -1)
 
-            return self.detect(pred_outs, self)
+            # return self.detect(pred_outs, self)
+            #======add========
+            return pred_outs
 
 
 

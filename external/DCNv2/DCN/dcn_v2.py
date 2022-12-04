@@ -12,21 +12,8 @@ from torch.autograd.function import once_differentiable
 
 import _ext as _backend
 
-# dcn_v2.py
-class _DCNv2(Function):
 
-    ###########################  修改的部分 ########################
-    # 这个函数相当于增加了onnx对DCNv2的支持
-    @staticmethod
-    def symbolic(g, input, offset,mask, weight, bias, stride, padding, dilation, deformable_groups):
-        # dilation: [1, 1],padding: [1, 1],stride: [1, 1],deformable_groups: 1
-        # 这里的_i代表是int类型，_s代表string类型
-        return g.op("DCNv2", input, offset,mask, weight, bias, name_s="DCNv2",
-                    dilation_i = dilation[0],
-                    padding_i = padding[0],
-                    stride_i = stride[0],
-                    deformable_groups_i = deformable_groups)
-            
+class _DCNv2(Function):
     @staticmethod
     def forward(ctx, input, offset, mask, weight, bias,
                 stride, padding, dilation, deformable_groups):
@@ -45,43 +32,23 @@ class _DCNv2(Function):
         ctx.save_for_backward(input, offset, mask, weight, bias)
         return output
 
+    @staticmethod
+    @once_differentiable
+    def backward(ctx, grad_output):
+        input, offset, mask, weight, bias = ctx.saved_tensors
+        grad_input, grad_offset, grad_mask, grad_weight, grad_bias = \
+            _backend.dcn_v2_backward(input, weight,
+                                     bias,
+                                     offset, mask,
+                                     grad_output,
+                                     ctx.kernel_size[0], ctx.kernel_size[1],
+                                     ctx.stride[0], ctx.stride[1],
+                                     ctx.padding[0], ctx.padding[1],
+                                     ctx.dilation[0], ctx.dilation[1],
+                                     ctx.deformable_groups)
 
-# class _DCNv2(Function):
-#     @staticmethod
-#     def forward(ctx, input, offset, mask, weight, bias,
-#                 stride, padding, dilation, deformable_groups):
-#         ctx.stride = _pair(stride)
-#         ctx.padding = _pair(padding)
-#         ctx.dilation = _pair(dilation)
-#         ctx.kernel_size = _pair(weight.shape[2:4])
-#         ctx.deformable_groups = deformable_groups
-#         output = _backend.dcn_v2_forward(input, weight, bias,
-#                                          offset, mask,
-#                                          ctx.kernel_size[0], ctx.kernel_size[1],
-#                                          ctx.stride[0], ctx.stride[1],
-#                                          ctx.padding[0], ctx.padding[1],
-#                                          ctx.dilation[0], ctx.dilation[1],
-#                                          ctx.deformable_groups)
-#         ctx.save_for_backward(input, offset, mask, weight, bias)
-#         return output
-
-#     @staticmethod
-#     @once_differentiable
-#     def backward(ctx, grad_output):
-#         input, offset, mask, weight, bias = ctx.saved_tensors
-#         grad_input, grad_offset, grad_mask, grad_weight, grad_bias = \
-#             _backend.dcn_v2_backward(input, weight,
-#                                      bias,
-#                                      offset, mask,
-#                                      grad_output,
-#                                      ctx.kernel_size[0], ctx.kernel_size[1],
-#                                      ctx.stride[0], ctx.stride[1],
-#                                      ctx.padding[0], ctx.padding[1],
-#                                      ctx.dilation[0], ctx.dilation[1],
-#                                      ctx.deformable_groups)
-
-#         return grad_input, grad_offset, grad_mask, grad_weight, grad_bias,\
-#             None, None, None, None,
+        return grad_input, grad_offset, grad_mask, grad_weight, grad_bias,\
+            None, None, None, None,
 
 
 dcn_v2_conv = _DCNv2.apply
