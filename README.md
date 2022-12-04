@@ -60,7 +60,76 @@ Some examples from our YOLACT base model (33.5 fps on a Titan Xp and 29.8 mAP on
    cd external/DCNv2
    python setup.py build develop
    ```
+ 
+# Optimizer by OpenVINO
+There is not been verified whether Intel dGPU and Nvidia GPU are compatible in the same device, 
+So recommended to use two devices Nvidia dGPU and Intel dGPU
+- Nvidia dGPU device: For torch export to onnx
+- Intel dGPU device : For IR model convert and performance evaluate
 
+## Requirment 
+- python           (verified == 3.6)
+- CUDA Version     (verified == 11.2)
+- pytorch <= 1.5.0 (verified == 1.4.0)
+- torchvision      (verified == 0.5.0)
+  ```Shell
+  # Cython needs to be installed before pycocotools
+  pip install cython
+  pip install opencv-python pillow pycocotools matplotlib 
+  ```
+
+## Step 1. yolact++ pth export onnx
+ - If you want to use YOLACT++, compile deformable convolutional layers (from [DCNv2](https://github.com/CharlesShang/DCNv2/tree/pytorch_1.0)).
+   Make sure you have the latest CUDA toolkit installed from [NVidia's Website](https://developer.nvidia.com/cuda-toolkit).
+  ```Shell
+  cd external/DCNv2
+  python setup.py build develop
+  ```
+- To export onnx
+  ```Shell
+  cd <YOLACT_OPENVINO_PATH>
+  python yolact_pth2onnx.py
+  ```
+
+## Step 2. Model Convert onnx to IR
+Using mo toolkit to convert the IR model 
+```Shell
+source <OpenVINO_INSTALL_PATH>/setupvars.sh
+
+# Export to FP32 IR 
+mo -m <YOLACT_MODEL>.onnx --output_dir ./
+
+# Export to FP16 IR 
+mo -m <YOLACT_MODEL>.onnx --compress_to_fp16 --output_dir <FP16_IR> 
+```
+
+## Step 3. POT model quanitization 
+Prepare COCO dataset , of course can follow the datasets format and build a customer's dataset
+```Shell
+# This script is for `simplified` mode quantify algo, Only for the verification of yolact model's quantitation process ,
+# Can not ensure the accuracy of model, If want to output the high precision quantization model,
+# Pls refer the [POT instruction](https://docs.openvino.ai/latest/pot_introduction.html). 
+pot -q default -m <YOLACT_MODEL_XML> -w <YOLACT_MODEL_BIN>  --output-dir  <POT_OUTPUT_PATH> --data-source <COCO_DATASET>/val2017/ --engine simplified
+```
+
+## Step 4. Benchmark performance evaluate
+Using OpenVINO benchmark_app to evaluate the IR(FP32/FP16/INT8) model performance 
+For evaluate on the Intel Flex dGPU
+```Shell
+source <OpenVINO_INSTALL_PATH>/setupvars.sh
+cd <OpenVINO_INSTALL_PATH>/samples/cpp/
+./build_samples.sh -b ov2_infer_demo
+./ov2_infer_demo/intel64/Release/benchmark_app -m <YOLACT_MODEL_XML> -t 5 -d GPU -hint latency
+# -d "<device>"  Optional. Specify a target device to infer on (the list of available devices is shown below). Default value is CPU. 
+          # Use  "-d HETERO:<comma-separated_devices_list>" format to specify HETERO plugin. 
+          # Use "-d MULTI:<comma-separated_devices_list>" format to specify MULTI plugin. The application looks for a suitable plugin for the specified device.
+# -hint  "performance hint (latency or throughput or cumulative_throughput or none)"   Optional. Performance hint allows the OpenVINO device to select the right model-specific settings.
+          # 'throughput' or 'tput': device performance mode will be set to THROUGHPUT.
+          # 'cumulative_throughput' or 'ctput': device performance mode will be set to CUMULATIVE_THROUGHPUT.
+          # 'latency': device performance mode will be set to LATENCY.
+          # 'none': no device performance mode will be set.
+          # Using explicit 'nstreams' or other device-specific options, please set hint to 'none'
+```
 
 # Evaluation
 Here are our YOLACT models (released on April 5th, 2019) along with their FPS on a Titan Xp and mAP on `test-dev`:
